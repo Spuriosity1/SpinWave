@@ -21,4 +21,5 @@ Once defined, it's possible to
 (Build model prototype) -> (Export model [define some sensible format for this, JSON?]) -> Load model in headless compute cluster -> Optimise parameters
 2. Fix all 2D-dependent variables for full 3D calculation (straightforward but irritating)
 3. Classical ground state optimisation routines -- Some more rigorous optimisers would do a better job
-4. Magnon damping (speculative)
+4. Implement 2D plot fitting
+5. Magnon damping (speculative)
