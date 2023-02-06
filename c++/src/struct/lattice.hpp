@@ -1,3 +1,15 @@
+/**
+ * @file lattice.hpp
+ * @author Alaric Sanders (you@domain.com)
+ * @brief Stores the abstractions responsible for representing a lattice's geometry.
+ * @version 0.2
+ * @date 2023-02-06
+ * 
+ * @copyright GPLv3
+ * 
+ */
+
+
 #ifndef lattice_hh
 #define lattice_hh
 

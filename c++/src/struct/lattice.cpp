@@ -5,7 +5,7 @@
  * @version 0.2
  * @date 2023-02-06
  * 
- * @copyright Copyright (c) 2023
+ * @copyright GPLv3
  * 
  */
 
