@@ -21,95 +21,15 @@
 #include <map>
 #include <nlohmann/json.hpp>
 
-#ifndef MACHINE_EPS
-#define MACHINE_EPS 1e-16
-#endif
+#include <coupling_type.hpp>
+#include <bond.hpp>
+
+
 
 // namespace lat {
 
 using json=nlohmann::json;
 
-// Defines a type of fundamental interaction (e.g. Heisenberg)
-struct coupling_type {
-    // coupling_type(const std::string& name, const arma::dmat33& mat) : name(name), mat(mat){};
-    std::string name;
-    arma::dmat33 mat;
-    double val;
-};
-
-inline std::ostream& operator<<(std::ostream& o, const coupling_type& c){
-    o << "["<<c.name<<"] = "<<c.val<<" *\n"<<c.mat;
-    return o;
-}
-
-
-// Represents the name and position of a site
-struct site {
-    // A (unique) name for the site
-    std::string name;
-    // The position of the site *in lattice coordinates*
-    arma::dvec3 xyz;
-    // Heisenberg spin of the site
-    arma::dvec3 spin;
-};
-
-inline bool operator==(const site& s1, const site& s2){
-    return (s1.name == s2.name && arma::norm(s1.xyz - s2.xyz, 2) < MACHINE_EPS && arma::norm(s1.spin - s2.spin, 2) < MACHINE_EPS);
-}
-
-inline bool operator!=(const site& s1, const site& s2){
-    return !(s1 == s2);
-}
-
-inline bool operator==(const coupling_type& J1, const coupling_type& J2){
-    return (J1.name == J2.name && arma::norm(J1.mat - J2.mat, 2) < MACHINE_EPS && abs(J1.val - J2.val) < MACHINE_EPS);
-}
-
-inline bool operator!=(const coupling_type& J1, const coupling_type& J2){
-    return !(J1 == J2);
-}
-
-inline std::ostream& operator<<(std::ostream& o, const site& s){
-    o << "["<<s.name << "] " <<" @ ["<< s.xyz[0] <<"a1 + "<<s.xyz[1]<<"a2 + " << s.xyz[2]<<"a3]  =" << s.spin.t();
-    return o;
-}
-
-
-
-struct bond {
-    bond(const bond& b) : 
-    coupling(b.coupling), from_idx(b.from_idx), to_idx(b.to_idx), dx(b.dx)
-    {}
-    bond(const bond&& b) : 
-    coupling(b.coupling), from_idx(b.from_idx), to_idx(b.to_idx)
-    {dx = std::move(b.dx);}
-    bond(const coupling_type& coupling): coupling(coupling){};
-    bond(const coupling_type& coupling, size_t from_idx, size_t to_idx, const arma::dvec3& dx) :
-        coupling(coupling), from_idx(from_idx), to_idx(to_idx), dx(dx){};
-
-    bond& operator=(const bond&) = delete; // copy assignment forbidden
-
-
-    const coupling_type& coupling;
-    // Sparse array of coupling vectors
-    // Interpret these as (site_idx) (vectors R)
-    size_t from_idx;
-    size_t to_idx;
-    // vector [R_from - R_to]
-    arma::dvec3 dx;
-};
-
-inline bool operator==(const bond& b1, const bond& b2) = delete;
-
-inline bool operator!=(const bond& b1, const bond& b2) = delete;
-
-inline std::ostream& operator<<(std::ostream& o, const bond& b){
-    const coupling_type& c = b.coupling;
-    o << c.name;
-    o << " " << b.from_idx << "->" << b.to_idx;
-    o <<", dx="<<b.dx.t();
-    return o;
-}
 
 
 
@@ -149,21 +69,29 @@ public:
     // void reciprocal_lat_vectors(arma::dmat33& b) const;
     // void reciprocal_mag_vectors(arma::dmat33& b) const;
 
-    size_t num_sites() const {
+    inline size_t num_sites() const {
         return sites.size();
     }
 
-    const site& get_site(size_t i) const{
+    inline const site& get_site(size_t i) const{
         return sites[i];
     }
 
-    const site& get_site(const std::string& s) const{
+    inline const site& get_site(const std::string& s) const{
         return sites[site_dict.at(s)];
     }
 
-    const coupling_type& get_coupling(const std::string& s) const{
+    inline arma::dvec3& cl_spin_at(size_t i) {
+        return sites[i].spin;
+    }
+
+    inline arma::dvec3& cl_spin_at(const std::string& s){
+        return sites[site_dict.at(s)].spin;
+    }
+
+    inline const coupling_type& get_coupling(const std::string& s) const{
         return coupling_types[coupling_dict.at(s)];
-    } 
+    }
 
     // delete everything
     void clear();
@@ -221,7 +149,7 @@ public:
     
     
 
-private:
+protected:
     // Lattice vectors, used for defining BZ coordinates
     // the [i]th vector is in lattice_vectors(i,*);
     arma::dmat33 lattice_vectors;

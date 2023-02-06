@@ -1069,4 +1069,5 @@ build/struct/lattice.o: src/struct/lattice.cpp src/struct/lattice.hpp \
  /opt/homebrew/include/nlohmann/ordered_map.hpp \
  /opt/homebrew/Cellar/gcc/12.2.0/include/c++/12/any \
  /opt/homebrew/include/nlohmann/detail/macro_unscope.hpp \
- /opt/homebrew/include/nlohmann/thirdparty/hedley/hedley_undef.hpp
+ /opt/homebrew/include/nlohmann/thirdparty/hedley/hedley_undef.hpp \
+ src/struct/coupling_type.hpp src/struct/bond.hpp

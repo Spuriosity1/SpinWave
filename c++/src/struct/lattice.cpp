@@ -93,8 +93,8 @@ bool operator==(const lattice& l1, const lattice& l2){
             for (std::list<size_t>::const_iterator it = idx_set.begin(); it != idx_set.end(); it++){
                 auto const& b2 = l2.bonds[*it];
                 if (b1.coupling.name == b2.coupling.name &&
-                l1.sites[b1.to_idx] == l2.sites[b2.to_idx] &&
-                l1.sites[b1.from_idx] == l2.sites[b2.from_idx] &&
+                l1.sites[b1.to_site.idx] == l2.sites[b2.to_site.idx] &&
+                l1.sites[b1.from_site.idx] == l2.sites[b2.from_site.idx] &&
                 arma::norm(b1.dx - b2.dx, 2) < MACHINE_EPS
                     ) {
                     // found one!
@@ -132,17 +132,25 @@ void lattice::get_reciprocal_mag_vectors(arma::dmat33& b) const {
  * @return uint16_t index of inserted site
  */
 uint16_t lattice::add_site(const std::string& name, const arma::vec3& where, bool lattice_coords=true){
-    site s;
-    s.name = name;
-    s.xyz = lattice_coords ? where : arma::solve(this->lattice_vectors, where);
-    
     size_t idx = sites.size();
+    site s(idx, name);
+
+    if (lattice_coords) {
+        s.xyz = where;
+    } else {
+        s.xyz = arma::solve(this->lattice_vectors, where);
+    }
+    
+    
     this->sites.push_back(s);
     auto res = this->site_dict.insert(std::pair<std::string, size_t>(s.name, idx));
     // res = (iterator pointing to newly inserted memeber, success flag)
     if (res.second == false) {
         // have a duplicate!
         throw std::logic_error("Attempting to add a duplicate site - all sites must be given unique names.");
+    }
+    if (this->sites[idx].idx != idx){
+        throw std::logic_error("Site index has been mislabeled!");
     }
     return idx;
 }
@@ -151,7 +159,7 @@ uint16_t lattice::add_site(const std::string& name, const arma::vec3& where, boo
 void lattice::add_bond(const std::string &from, const std::string& to, const arma::Col<arma::sword>::fixed<3>& to_cell, const std::string& J_name ){
     const coupling_type& J = get_coupling(J_name);
     try {
-        add_bond(this->site_dict.at(from), this->site_dict.at(to), to_cell, J );
+        add_bond(site_dict.at(from), this->site_dict.at(to), to_cell, J );
     } catch (const std::out_of_range& e) {
         std::ostringstream ss;
         ss <<e.what()<<"\nFailed to add bond: Could not resolve bondspec [" <<from<<"] -> ["<<to<<"], "<<J_name<<std::endl;
@@ -168,13 +176,21 @@ void lattice::add_bond(const std::string &from, const std::string& to, const arm
  * @param J Pointer to a coupling_type object
  */
 void lattice::add_bond(size_t from_idx, size_t to_idx, const arma::Col<arma::sword>::fixed<3>& to_cell, const coupling_type& J){
-    bond b(J);
-    b.from_idx = from_idx, b.to_idx = to_idx;
-    b.dx = this->sites[from_idx].xyz + to_cell - this->sites[to_idx].xyz;
+    site& from = sites[from_idx];
+    site& to = sites[to_idx];
+
+    if (&from == &to){
+        // attempting to add a bond to iteslf.
+        throw std::logic_error("Sites cannot self-interact!");
+    }
+
+    bond b(J, from, to, to_cell);
     // sanity check: Is J one of my couplings?
     for (auto& c: this->coupling_types){
         if (c.name == J.name){
             this->bonds.push_back(b);
+            from.neighbours_as_from.push_back( std::make_shared<bond>(bonds.back()) );
+            to.neighbours_as_to.push_back( std::make_shared<bond>(bonds.back()) );
             return;
         }
     }
@@ -312,8 +328,8 @@ void save_json(const std::string& filename, const lattice& lat) {
     for (auto& b : lat.get_bonds()){
         json::object_t tmp = json::object();
 
-        const site& from = lat.get_site(b.from_idx);
-        const site& to = lat.get_site(b.to_idx);
+        const site& from = b.from_site;
+        const site& to = b.to_site;
         
         tmp["from"] = from.name;
         tmp["to"] = to.name;

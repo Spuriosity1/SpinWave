@@ -18,6 +18,7 @@ function check_retval {
 cd "${0%/*}/../"
 echo Building unit tests...
 make json_parse_test
+check_retval
 
 echo Done.
 echo
