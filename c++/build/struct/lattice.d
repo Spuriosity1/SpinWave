@@ -1,4 +1,4 @@
-build/struct/lattice.o: src/struct/lattice.cpp src/struct/lattice.h \
+build/struct/lattice.o: src/struct/lattice.cpp src/struct/lattice.hpp \
  /opt/homebrew/include/armadillo \
  /opt/homebrew/include/armadillo_bits/config.hpp \
  /opt/homebrew/include/armadillo_bits/compiler_check.hpp \

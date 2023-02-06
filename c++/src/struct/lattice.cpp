@@ -1,7 +1,15 @@
-/* Responsible for storing the gemetry of a unit cell.
-*/
+/**
+ * @file lattice.cpp
+ * @author Alaric Sanders (you@domain.com)
+ * @brief Stores the abstractions responsible for representing a lattice's geometry.
+ * @version 0.2
+ * @date 2023-02-06
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
 
-#include "lattice.h"
+#include "lattice.hpp"
 #include <fstream>
 
 
@@ -83,7 +91,12 @@ bool operator==(const lattice& l1, const lattice& l2){
 
             // Search the remaining elements
             for (std::list<size_t>::const_iterator it = idx_set.begin(); it != idx_set.end(); it++){
-                if (l2.bonds[*it] == b1) {
+                auto const& b2 = l2.bonds[*it];
+                if (b1.coupling.name == b2.coupling.name &&
+                l1.sites[b1.to_idx] == l2.sites[b2.to_idx] &&
+                l1.sites[b1.from_idx] == l2.sites[b2.from_idx] &&
+                arma::norm(b1.dx - b2.dx, 2) < MACHINE_EPS
+                    ) {
                     // found one!
                     found_one = true;
                     idx_set.erase(it);
@@ -144,8 +157,6 @@ void lattice::add_bond(const std::string &from, const std::string& to, const arm
         ss <<e.what()<<"\nFailed to add bond: Could not resolve bondspec [" <<from<<"] -> ["<<to<<"], "<<J_name<<std::endl;
         throw std::out_of_range(ss.str());
     }
-    
-
 }
 
 /**
@@ -229,21 +240,22 @@ bool load_json(const std::string& filename, lattice& lat){
 
         // define couplings
         for (auto& [name, ctype]: jf.at("couplings").items()) {
-            coupling_type J;
+            coupling_type J =coupling_type();
             J.name = name;
             J.val = ctype.at("strength");
 
-            json::array_t arrarr = ctype.at("matrix");
+            const json::array_t& arrarr = ctype.at("matrix");
             J.mat = dmat33_from_jsonarr(arrarr);
 
             lat.define_coupling(J);
+        }
 
+        for (auto& [name, ctype]: jf.at("couplings").items()) {
             // populate bond list    
             for (auto& bondspec : ctype.at("bonds") ){
                 lat.add_bond(bondspec["from"], bondspec["to"], 
                     as_armavec<json::array_t, arma::Col<arma::sword>::fixed<3> >(bondspec["celldelta"]), name);
             }
-        
         }
 
         
@@ -298,7 +310,6 @@ void save_json(const std::string& filename, const lattice& lat) {
     }
 
     for (auto& b : lat.get_bonds()){
-        std::cerr << "Coupling name:" << b.coupling.name << std::endl;
         json::object_t tmp = json::object();
 
         const site& from = lat.get_site(b.from_idx);
