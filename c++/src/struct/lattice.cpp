@@ -4,19 +4,49 @@
 #include "lattice.h"
 #include <fstream>
 
-using namespace lat;
 
-template<typename T>
-inline arma::vec3 as_armavec(const T& x){
-    return arma::vec3({x[0],x[1],x[2]});
+using json=nlohmann::json;
+// utility
+
+template<typename T, typename vt=arma::dvec3>
+inline vt as_armavec(const T& x){
+    return vt({x[0],x[1],x[2]});
 }
 
-// RECIPROCALS
 
-const double PI = 3.141592653589793238462643383279502884L;
 
-// returns b(i, n) such that a(m,i)b(i,n) = 2pi \delta_nm
-void lattice::reciprocal_vectors(arma::dmat33& b, const arma::dmat33& a){
+
+// copies json array 
+inline arma::dmat33 dmat33_from_jsonarr(const json::array_t& a){
+    arma::dmat33 m;
+    for (int i=0; i<3; i++){
+        for (int j=0; j<3; j++){
+            m(i,j) = a[i][j];
+        }
+    }
+    return m;
+}
+
+// copies json array 
+inline json::array_t jsonarr_from_dmat33(const arma::dmat33& m){
+    json::array_t a;
+    a.reserve(3);
+    for (int i=0; i<3; i++){
+        a.push_back(json::array({m(i,0), m(i,1), m(i,2)}));
+    }
+    return a;
+}
+
+
+
+/**
+ * @brief returns b(i, n) such that a(m,i)b(i,n) = 2pi \delta_nm
+ * 
+ * @param b Matrix to store reciprocal vectors in
+ * @param a Knonw unit  cell dimensions
+ */
+void reciprocal_vectors(arma::dmat33& b, const arma::dmat33& a) {
+    const static double PI = 3.141592653589793238462643383279502884L;
     double vol = arma::det(a);
     if (fabs(vol) < 1e-16){
         throw "Coordiante system is singular";
@@ -27,149 +57,282 @@ void lattice::reciprocal_vectors(arma::dmat33& b, const arma::dmat33& a){
 }
 
 
-// CONSTRUCTION
-uint16_t lattice::add_site(const std::string& name, const arma::vec3& where){
+
+bool operator==(const lattice& l1, const lattice& l2){
+    try {
+        // Check that site dicts agree on keys
+        for (auto const& [name, site_idx]: l1.site_dict) {
+            if (l2.get_site(name) != l1.get_site(name)) return false;
+        }
+
+        for (auto const& [name, J_idx]: l1.coupling_dict) {
+            if (l1.get_coupling(name) != l2.get_coupling(name)) return false;
+        }
+
+        if (l1.bonds.size() != l2.bonds.size() ) return false;
+
+        std::list<size_t> idx_set(l1.bonds.size());
+
+        for (size_t i=0; i<l1.bonds.size(); i++){
+            idx_set.push_back(i);
+        }
+
+        for (auto const& b1 : l1.bonds) {
+            // may be reshuffled in l2, must do linear search :(
+            bool found_one = false;
+
+            // Search the remaining elements
+            for (std::list<size_t>::const_iterator it = idx_set.begin(); it != idx_set.end(); it++){
+                if (l2.bonds[*it] == b1) {
+                    // found one!
+                    found_one = true;
+                    idx_set.erase(it);
+                    it = idx_set.end();
+                }
+            }
+            if (!found_one) return false;
+            // ensures only 1/2 N(N+1) equality tests.
+        }
+
+    } catch (std::out_of_range& e) {
+        std::cerr << e.what();
+        return false;
+    }
+    return true;
+}
+
+
+void lattice::get_reciprocal_lat_vectors(arma::dmat33& b) const {
+    reciprocal_vectors(b, this->lattice_vectors);
+}
+
+void lattice::get_reciprocal_mag_vectors(arma::dmat33& b) const {
+    reciprocal_vectors(b, this->magnetic_vectors);
+}
+
+/**
+ * @brief Defines a new site for the lattice
+ * 
+ * @param name Name for the siet (must be unique)
+ * @param where Vector3 indicating location of site 
+ * @param lattice_coords Boolean flag for whether 'where' is supplied in lattice coordiantes or Cartesian coordinates
+ * @return uint16_t index of inserted site
+ */
+uint16_t lattice::add_site(const std::string& name, const arma::vec3& where, bool lattice_coords=true){
     site s;
     s.name = name;
-    s.xyz = where;
+    s.xyz = lattice_coords ? where : arma::solve(this->lattice_vectors, where);
+    
     size_t idx = sites.size();
     this->sites.push_back(s);
-    auto res = this->siteDict.insert(std::pair<std::string, size_t>(s.name, idx));
+    auto res = this->site_dict.insert(std::pair<std::string, size_t>(s.name, idx));
+    // res = (iterator pointing to newly inserted memeber, success flag)
     if (res.second == false) {
         // have a duplicate!
-        throw "Attempting to add a duplicate site to map!";
+        throw std::logic_error("Attempting to add a duplicate site - all sites must be given unique names.");
     }
-}
-
-// sets the coupling matrix of "handle" to "J"
-// passed by reference, so couplings can still be accessed
-void lattice::set_coupling(const coupling_type& J){
-    this->coupling_types.push_back(J);
-    this->couplingDict[J.name] = this->coupling_types.back();
+    return idx;
 }
 
 
+void lattice::add_bond(const std::string &from, const std::string& to, const arma::Col<arma::sword>::fixed<3>& to_cell, const std::string& J_name ){
+    const coupling_type& J = get_coupling(J_name);
+    try {
+        add_bond(this->site_dict.at(from), this->site_dict.at(to), to_cell, J );
+    } catch (const std::out_of_range& e) {
+        std::ostringstream ss;
+        ss <<e.what()<<"\nFailed to add bond: Could not resolve bondspec [" <<from<<"] -> ["<<to<<"], "<<J_name<<std::endl;
+        throw std::out_of_range(ss.str());
+    }
+    
 
-void add_bond(size_t from_idx, size_t to_idx, const arma::vec3& to_cell, const coupling_type& J){
-    bond b(&J);
+}
+
+/**
+ * @brief Adds a bond linking site [from_idx] in the original unit cell to site [to_idx] in unit cell of index to_cell [hkl] 
+ * 
+ * @param from_idx Site to link from
+ * @param to_idx Site to link to
+ * @param to_cell [hkl] index of site to link to
+ * @param J Pointer to a coupling_type object
+ */
+void lattice::add_bond(size_t from_idx, size_t to_idx, const arma::Col<arma::sword>::fixed<3>& to_cell, const coupling_type& J){
+    bond b(J);
     b.from_idx = from_idx, b.to_idx = to_idx;
-    throw std::out_of_range("Could not add bond to site");
+    b.dx = this->sites[from_idx].xyz + to_cell - this->sites[to_idx].xyz;
+    // sanity check: Is J one of my couplings?
+    for (auto& c: this->coupling_types){
+        if (c.name == J.name){
+            this->bonds.push_back(b);
+            return;
+        }
+    }
+    throw std::logic_error("Coupling type specified does not belong to this lattice!");
 }
 
-void add_bond(const arma::dvec3& from_loc, const arma::dvec3& to_loc){
-    throw std::out_of_range("Could not add bond to site");
+
+// void lattice::add_bond(const arma::dvec3& from_loc, const arma::dvec3& to_loc){
+//     throw std::out_of_range("Could not add bond to site");
+// }
+
+void lattice::define_coupling(coupling_type& J){
+    coupling_dict.insert({J.name, coupling_types.size()});
+    coupling_types.push_back(J);
 }
 
-
+// void lattice::define_coupling(coupling_type&& J){
+//     std::string jn = J.name;
+//     coupling_dict.insert(
+//         std::pair(jn, coupling_types.size())
+//     );
+//     coupling_types.push_back(J);
+// }
 
 void lattice::clear(){
     sites.clear();
-    siteDict.clear();
-    coupling_types.clear();
+    site_dict.clear();
     bonds.clear();
 }
 
-
 ///// INPUT/OUTPUT
-
-bool lattice::load_json(const std::string& filename){
+bool load_json(const std::string& filename, lattice& lat){
     std::ifstream ifs(filename);
     json jf = json::parse(ifs, nullptr, true, true); // parse ignoring comments
 
     // delete everything
-    clear();
+    lat.clear();
 
     // Cursed parser code
+    // TODO: data validation. At this point it's spray & pray.
     try {
-        // Pull out the subarrays
-        copy_to_mat(this->lattice_vectors, jf.at("lattice vectors"));
-        copy_to_mat(this->magnetic_vectors, jf.at("magnetic vectors"));
-            
+        
+        for (int i=0; i<3; i++){
+            arma::dvec3 v = as_armavec<json::array_t, arma::dvec3>(jf.at("lattice vectors")[i]);
+            lat.set_lattice_vector(i, v);
+            arma::dvec3 mv = as_armavec<json::array_t, arma::dvec3>(jf.at("magnetic vectors")[i]);
+            lat.set_magnetic_vector(i, mv);
+        }
+
+        bool use_lattice_vectors = false;
+        if (jf.at("site_basis") == "lattice"){
+            use_lattice_vectors = true;
+        } else if (jf.at("site_basis") == "cartesian"){
+            use_lattice_vectors = false;
+        } else {
+            throw std::runtime_error("Expected 'lattice' or 'cartesian' for specifier file");
+        }
+
         // populate sites
-        for (auto& s : jf.at("sites")) {
-            add_site(s.at("name"), as_armavec<json::array_t>(s.at("xyz")));
+        for (auto&& s : jf.at("sites")) {
+            lat.add_site(s.at("name"), as_armavec<json::array_t>(s.at("xyz")), use_lattice_vectors);
         }
 
         // define couplings
-        for (auto&& [name, ctype]: jf.at("couplings").items()) {
+        for (auto& [name, ctype]: jf.at("couplings").items()) {
             coupling_type J;
             J.name = name;
-            J.val = 0;
+            J.val = ctype.at("strength");
 
             json::array_t arrarr = ctype.at("matrix");
-            copy_to_mat(J.mat, arrarr);
+            J.mat = dmat33_from_jsonarr(arrarr);
 
-            this->coupling_types.push_back(J);
-            // populate bond list
-            for (auto&& bondspec : ctype.at("bonds") ){
-                bond b(&J);
-                b.from_idx = siteDict[bondspec["from"]];
-                b.to_idx = siteDict[bondspec["to"]];
-                b.dx = sites[b.to_idx].xyz - sites[b.from_idx].xyz;
-                arma::dvec3 delta = {bondspec["celldelta"][0], bondspec["celldelta"][1],bondspec["celldelta"][2]};
-                b.dx += delta*lattice_vectors;
-                this->bonds.push_back(b);
-            }    
+            lat.define_coupling(J);
+
+            // populate bond list    
+            for (auto& bondspec : ctype.at("bonds") ){
+                lat.add_bond(bondspec["from"], bondspec["to"], 
+                    as_armavec<json::array_t, arma::Col<arma::sword>::fixed<3> >(bondspec["celldelta"]), name);
+            }
+        
         }
 
+        
+
     } catch (json::out_of_range& e) {
-         std::cerr << "JSON file" << filename << "has invalid structure:\n" << e.what()<<std::endl;
+         std::cerr << "JSON file '" << filename << "' has invalid structure:\n" << e.what() << std::endl;
          return false;
     }
     return true;
 }
 
-void lattice::save_json(const std::string& filename) {
-    std::ofstream ofs;
+
+// serialisers
+inline json as_json(const site& s){
     json j;
+    j["name"] = s.name;
+    j["xyz"] = json::array({s.xyz[0],s.xyz[1],s.xyz[2]});
+    j["heis_vector"] = json::array({s.spin[0],s.spin[1],s.spin[2]});
+    return j;
+}
+
+inline json as_json(const coupling_type& ct){
+    json j;
+    j["name"] = ct.name;
+    j["matrix"] = jsonarr_from_dmat33( ct.mat);
+    j["strength"] = ct.val;
+    return j;
+}
+
+void save_json(const std::string& filename, const lattice& lat) {
+    
+    json j;
+    j["site_basis"] = "lattice";
     j["lattice vectors"] = json::array();
     j["magnetic vectors"] = json::array();
     for (size_t i=0; i<3; i++){
-        j["lattice vectors"][i]  = json::array({lattice_vectors(i,0), lattice_vectors(i,1), lattice_vectors(i,2)});
-        j["magnetic vectors"][i] = json::array({magnetic_vectors(i,0),magnetic_vectors(i,1),magnetic_vectors(i,2)});
+        arma::drowvec3 v;
+        v = lat.get_lattice_vector(i);
+        j["lattice vectors"][i]  = json::array({v(0), v(1), v(2)});
+        v = lat.get_magnetic_vector(i);
+        j["magnetic vectors"][i]  = json::array({v(0), v(1), v(2)});
     }
     j["sites"] = json::array();
-    for (size_t i=0; i<this->sites.size(); i++){
-        j["atoms"][i] = json({});
-        j["atoms"][i]["name"] = sites[i].name;
-        j["atoms"][i]["xyz"] = json::array({sites[i].xyz[0],sites[i].xyz[1],sites[i].xyz[2]});   
-        j["atoms"][i]["gs_vector"] = sites[i].spin;
+    for (size_t i=0; i<lat.num_sites(); i++){
+        j["sites"][i] = as_json(lat.get_site(i)); 
     }
 
     j["couplings"] = json::object();
-    for (auto&c : this->coupling_types){
-        j["couplings"][c.name] = json::object();
-        j["couplings"][c.name]["matrix"] = c.mat;
+    for (auto& c : lat.get_coupling_types()){
+        j["couplings"][c.name] = as_json(c);
         j["couplings"][c.name]["bonds"] = json::array();
     }
 
-    for (auto&b : this->bonds){
-        auto tmp = json::object();
-        
-        tmp["from"] = sites[b.from_idx].name;
-        tmp["to"] = sites[b.to_idx].name;
-        // dx = to - from + celldelta*latvecs
-        // celldelta*latvecs = (dx -to + from)
-        // latvecsT *celldeltaT = (dc-to+from)T
-        // determine the unit cell
-        arma::dvec3 v = arma::solve(lattice_vectors.t(), sites[b.from_idx].xyz - sites[b.to_idx].xyz + b.dx);
-        tmp["celldelta"] =  json::array({lround(v[0]), lround(v[1]), lround(v[2])}) ;
+    for (auto& b : lat.get_bonds()){
+        std::cerr << "Coupling name:" << b.coupling.name << std::endl;
+        json::object_t tmp = json::object();
 
-       j["couplings"][b.coupling->name]["bonds"].push_back(tmp);
+        const site& from = lat.get_site(b.from_idx);
+        const site& to = lat.get_site(b.to_idx);
+        
+        tmp["from"] = from.name;
+        tmp["to"] = to.name;
+        // dx = to - from + celldelta
+        // celldelta*latvecs = (dx -to + from)
+        // determine the unit cell
+        // internal units are lattice units: no need to do any matrix inversion
+        arma::dvec3 v =  from.xyz - to.xyz + b.dx;
+        tmp["celldelta"] =  json::array({lround(v[0]), lround(v[1]), lround(v[2])}) ;
+        
+        j["couplings"][b.coupling.name]["bonds"].push_back(tmp);
     }
 
+    std::ofstream ofs(filename);
     ofs << j;
     ofs.close();
 }
 
-// utility
-// copies json array 
-void lattice::copy_to_mat(arma::dmat33& m, const json::array_t& a){
-    for (int i=0; i<3; i++){
-        for (int j=0; j<3; j++){
-            m(i,j) = a[i][j];
-        }
+std::ostream& operator<<(std::ostream& o, const lattice& lat){
+    o<<"Sites:\n";
+    for (auto& s: lat.sites){
+        o << "\t"<< s << "\n";
     }
+    o<<"Bonds:\n";
+    for (auto& b: lat.bonds){
+        o << "\t" << b <<"\n";
+    }
+    o<<"Couplings:\n";
+    for (auto& c: lat.coupling_types){
+        o << "\t" << c <<"\n";
+    }
+    return o;
 }
-
-
