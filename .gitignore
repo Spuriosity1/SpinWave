@@ -3,3 +3,4 @@
 .vscode
 c++/test/out/**
 c++/bin/*
+c++/build/**
