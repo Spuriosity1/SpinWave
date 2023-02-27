@@ -31,9 +31,10 @@ int main(int argc, char** argv){
     load_json(dest,   L2);
     std::cout<<"###################################################";
     std::cout << "\nReloaded following from file:\n";
-    std::cout<< L << "\n\n";
+    
+    std::cout<< L2 << "\n\n";
 
-    int res = ( L == L2 );
-    std::cout << "Saved object "<<(res==0 ? "is identical to" : "differs from") << " object loaded from file" << std::endl;
-    return res;
+    
+    std::cout << "Saved object "<<( (L == L2) ? "is identical to" : "differs from") << " object loaded from file" << std::endl;
+    return ( L == L2 ) ? 0 : 1;
 }

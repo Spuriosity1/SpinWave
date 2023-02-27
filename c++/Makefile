@@ -17,7 +17,7 @@
 # ---------- Compiler and linker directives ----------
 CXX = g++-12
 
-CXXFLAGS = -std=c++17 -fopenmp -MD -g -Wall -pedantic
+CXXFLAGS = -std=c++17 -MD -g -Wall -pedantic
 CXXOPTS = 
 # LDFLAGS = -Wl,--gc-sections
 

@@ -319,7 +319,6 @@ build/struct/lattice.o: src/struct/lattice.cpp src/struct/lattice.hpp \
  /Library/Developer/CommandLineTools/SDKs/MacOSX12.sdk/usr/include/sys/_types/_uuid_t.h \
  /Library/Developer/CommandLineTools/SDKs/MacOSX12.sdk/usr/include/gethostuuid.h \
  /opt/homebrew/include/armadillo_bits/compiler_setup.hpp \
- /opt/homebrew/Cellar/gcc/12.2.0/lib/gcc/current/gcc/aarch64-apple-darwin21/12/include/omp.h \
  /opt/homebrew/include/armadillo_bits/include_hdf5.hpp \
  /opt/homebrew/opt/hdf5/include/hdf5.h \
  /opt/homebrew/opt/hdf5/include/H5public.h \

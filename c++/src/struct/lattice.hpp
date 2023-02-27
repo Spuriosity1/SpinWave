@@ -89,6 +89,20 @@ public:
         return sites[site_dict.at(s)].spin;
     }
 
+    bool has_site(const std::string& name) const {
+        for (auto& s : sites){
+            if (s.name == name) return true;
+        }
+        return false;
+    }
+
+    bool has_coupling(const std::string& name) const {
+        for (auto& s : coupling_types){
+            if (s.name == name) return true;
+        }
+        return false;
+    }
+
     inline const coupling_type& get_coupling(const std::string& s) const{
         return coupling_types[coupling_dict.at(s)];
     }

@@ -67,50 +67,55 @@ void reciprocal_vectors(arma::dmat33& b, const arma::dmat33& a) {
 
 
 bool operator==(const lattice& l1, const lattice& l2){
-    try {
-        // Check that site dicts agree on keys
-        for (auto const& [name, site_idx]: l1.site_dict) {
-            if (l2.get_site(name) != l1.get_site(name)) return false;
-        }
-
-        for (auto const& [name, J_idx]: l1.coupling_dict) {
-            if (l1.get_coupling(name) != l2.get_coupling(name)) return false;
-        }
-
-        if (l1.bonds.size() != l2.bonds.size() ) return false;
-
-        std::list<size_t> idx_set(l1.bonds.size());
-
-        for (size_t i=0; i<l1.bonds.size(); i++){
-            idx_set.push_back(i);
-        }
-
-        for (auto const& b1 : l1.bonds) {
-            // may be reshuffled in l2, must do linear search :(
-            bool found_one = false;
-
-            // Search the remaining elements
-            for (std::list<size_t>::const_iterator it = idx_set.begin(); it != idx_set.end(); it++){
-                auto const& b2 = l2.bonds[*it];
-                if (b1.coupling.name == b2.coupling.name &&
-                l1.sites[b1.to_site.idx] == l2.sites[b2.to_site.idx] &&
-                l1.sites[b1.from_site.idx] == l2.sites[b2.from_site.idx] &&
-                arma::norm(b1.dx - b2.dx, 2) < MACHINE_EPS
-                    ) {
-                    // found one!
-                    found_one = true;
-                    idx_set.erase(it);
-                    it = idx_set.end();
-                }
-            }
-            if (!found_one) return false;
-            // ensures only 1/2 N(N+1) equality tests.
-        }
-
-    } catch (std::out_of_range& e) {
-        std::cerr << e.what();
+    if (l1.num_sites() != l2.num_sites()){
         return false;
     }
+    if (l1.bonds.size() != l2.bonds.size()){
+        return false;
+    }
+
+    // Check that site dicts agree on keys
+    for (auto const& [name, site_idx]: l1.site_dict) {
+        if (!l2.has_site(name)) return false;
+        if (l2.get_site(name) != l1.get_site(name)) return false;
+    }
+
+    for (auto const& [name, J_idx]: l1.coupling_dict) {
+        if (!l2.has_coupling(name)) return false;
+        if (l1.get_coupling(name) != l2.get_coupling(name)) return false;
+    }
+
+    if (l1.bonds.size() != l2.bonds.size() ) return false;
+
+    std::list<size_t> idx_set(l1.bonds.size());
+
+    for (size_t i=0; i<l1.bonds.size(); i++){
+        idx_set.push_back(i);
+    }
+
+    for (auto const& b1 : l1.bonds) {
+        // may be reshuffled in l2, must do linear search :(
+        bool found_one = false;
+
+        // Search the remaining elements
+        for (std::list<size_t>::const_iterator it = idx_set.begin(); it != idx_set.end(); it++){
+            auto const& b2 = l2.bonds[*it];
+            if (b1.coupling.name == b2.coupling.name &&
+            l1.sites[b1.to_site.idx] == l2.sites[b2.to_site.idx] &&
+            l1.sites[b1.from_site.idx] == l2.sites[b2.from_site.idx] &&
+            arma::norm(b1.dx - b2.dx, 2) < MACHINE_EPS
+                ) {
+                // found one!
+                found_one = true;
+                idx_set.erase(it);
+                it = idx_set.end();
+            }
+        }
+        if (!found_one) return false;
+        // ensures only 1/2 N(N+1) equality tests.
+    }
+
+    
     return true;
 }
 
